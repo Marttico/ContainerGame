@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-
-
+import math
+import pygame
 # ---------------------------------
 # Input:  Container List Dataframe
 #        Lot info Dataframe
@@ -9,7 +9,6 @@ import pandas as pd
 # Output: Heightmap of lot np array
 # ---------------------------------
 
-# TODO: Add support for multiple lots.
 
 def ContainerListToPrioMatrix(df, lots):
     GeneratedMatrices = ContainerListToMatrix(df, lots)
@@ -31,8 +30,6 @@ def ContainerListToPrioMatrix(df, lots):
     #print(df[["Lot", "X", "Y", "Z"]] == topcontainers)
 
     return priomatrix
-
-
 
 def ContainerListToMatrix(df, lots):
     # Check if there's no duplicates.
@@ -83,7 +80,6 @@ def ContainerListToMatrix(df, lots):
         outputList.append(i.sum(axis=2))
     return outputList
 
-
 def MatrixToCollisionMatrix(matrix, AgentSize=4):
     outputMatrix = np.array(matrix)
     for i in range(AgentSize):
@@ -95,20 +91,132 @@ def MatrixToCollisionMatrix(matrix, AgentSize=4):
     # print(outputMatrix)
     return np.array(outputMatrix != 0, dtype=int)
 
+def IsMoveLegal(pos1, pos2, GeneratedMatrices, SecondHeight):
+    # max hoogte
+    if SecondHeight >= 5:
+        print('Max hoogte overstreden, zet de container ergens anders neer')
+        return False
 
-lotdata = {"ID": [0],
-           "Name": ["lot1"],
-           "maxStack": [5],
-           "Size": [(5, 5)]
-           }
+    if pos1 == pos2:
+        print("Hij probeert t op zichzelf te zetten... :/")
+        return False
 
-data = {"ContainerID": [1, 2, 3, 4, 5, 6, 7, 8],
-        "Name": ["InitContainer", "test1", "test2", "test3", "test4", "test5", "duplicateofInit", "test6"],
-        "Lot": [0, 0, 0, 0, 0, 0, 0, 0],
-        "X": [0, 1, 1, 0, 0, 0, 0, 3],
-        "Y": [0, 0, 0, 1, 1, 1, 0, 4],
-        "Z": [0, 0, 1, 0, 1, 2, 1, 0]}
+    pos = [pos1, pos2]
+    if pos1[3] == 1 and pos1[2] == pos2[2]:
+        if pos2[2] == pos1[2] + 1 or pos2[2] == pos1[2] - 1:
+            return True
 
-# MatrixToCollisionMatrix(ContainerListToMatrix(pd.DataFrame(data=data),pd.DataFrame(data=lotdata)))
+    for i in pos:
+
+        # container buiten lot
+        if i[0] == -1:
+            print("Container buiten lot")
+            return False
+
+            # container oppakken en neerzetten
+        pos1_x = i[1]
+        pos1_y = i[2]
+        lot = GeneratedMatrices[i[0]]
+
+        if pos1_y + 1 != len(lot) and pos1_y - 1 != -1 and lot[pos1_x, pos1_y - 1] != 0 and lot[
+            pos1_x, pos1_y + 1] != 0:
+            print("Container staat ingebouwd")
+            return False
+
+    return True
+
+def posHasContainer(lotpos,containerDF):
+    return not (containerDF.loc[(containerDF[["Lot","X","Y","Z"]] == lotpos).all(axis=1)]).empty
+
+def getContainerAttributes(lotpos,containerDF):
+    return (containerDF.loc[(containerDF[["Lot","X","Y","Z"]] == lotpos).all(axis=1)])
+
+def below(pos):
+    return pos[0],pos[1],pos[2],max(pos[3]-1,0)
+
+class Lot:
+    def __init__(self, pos, size, maxStackSize, scr, scfac = 50, offset = (0, 0), name = ""):
+        self.name = name
+        self.size = size
+        self.maxStackSize = maxStackSize
+        self.psc = int(math.floor(256 / maxStackSize))
+        self.scr = scr
+        self.scfac = scfac
+        self.offset = offset
+        self.nparr = np.zeros(self.size, dtype=int)
+        self.pos = pos
+        self.bordercolor = (128, 128, 128)
+        self.font = pygame.font.Font('freesansbold.ttf', 32)
+        self.text = self.font.render(self.name, True, (255,255,255))
+        self.lagsbehind = True
+
+    def setLagsBehind(self):
+        self.lagsbehind = True
+
+    def getArray(self):
+        return self.nparr
+
+    def loadData(self, data):
+        self.lagsbehind = False
+        self.nparr = data
+        self.size = data.shape
+
+    def getPos(self):
+        return self.pos
+
+    def getSize(self):
+        return self.size
+
+    def generateRandom(self):
+        self.nparr = np.random.randint(0, self.maxStackSize, size=self.size)
+
+    def setBorderColor(self, r, g, b):
+        self.bordercolor = (r, g, b)
+
+    def render(self,scale,offset,StretchFactor):
+        self.scfac = scale
+        self.offset = offset
+        widthcorrection,heightcorrection = pygame.display.get_surface().get_size()
+        widthcorrection /= 2
+        heightcorrection /= 2
 
 
+
+        for x, line in enumerate(self.nparr):
+            for y, val in enumerate(line):
+                pxcolor = (val * self.psc, val * self.psc, val * self.psc)
+                pygame.draw.rect(self.scr, pxcolor, ((x + self.pos[0]) * StretchFactor * self.scfac + self.offset[0],
+                                                     (y + self.pos[1]) * self.scfac + self.offset[1],
+                                                     self.scfac * StretchFactor,
+                                                     self.scfac))
+        # Top
+        pygame.draw.rect(self.scr, self.bordercolor, (self.pos[0] * self.scfac * StretchFactor + self.offset[0],
+                                                    (self.pos[1] - 0.5) * self.scfac + self.offset[1],
+                                                    self.nparr.shape[0] * self.scfac * StretchFactor,
+                                                    0.5 * self.scfac))
+
+        # Bottom
+        pygame.draw.rect(self.scr, self.bordercolor, (self.pos[0] * self.scfac * StretchFactor + self.offset[0],
+                                                    (self.pos[1] + self.nparr.shape[1]) * self.scfac + self.offset[1],
+                                                    self.nparr.shape[0] * self.scfac * StretchFactor,
+                                                    0.5 * self.scfac))
+
+        # Left
+        pygame.draw.rect(self.scr, self.bordercolor, (
+                                                    (self.pos[0]*StretchFactor - 0.5) * self.scfac + self.offset[0],
+                                                    self.pos[1] * self.scfac + self.offset[1],
+                                                    0.5 * self.scfac,
+                                                    self.nparr.shape[1] * self.scfac))
+
+        # Right
+        pygame.draw.rect(self.scr, self.bordercolor, (
+                                                    (self.pos[0] + self.nparr.shape[0]) * StretchFactor * self.scfac + self.offset[0],
+                                                    self.pos[1] * self.scfac + self.offset[1],
+                                                    0.5 * self.scfac,
+                                                    self.nparr.shape[1] * self.scfac))
+        # Text Renderer
+        textRect = self.text.get_rect()
+        textRect.center = ((self.pos[0] + self.size[0] // 2) * StretchFactor * self.scfac + self.offset[0],
+                           (self.size[1] + self.pos[1]+2) * self.scfac + self.offset[1])
+
+        self.scr.blit(self.text,textRect)
