@@ -49,25 +49,28 @@ Offset = (0,0)
 def moveContainerPos(pos1,pos2):
 
     # Generate 2D matrix heightmap per lot in a list.
-    GeneratedMatrices = ContainerListToMatrix(containerDF,lotDF)
+    HeightMapLot1 = ContainerListToSingleMatrix(containerDF,lotDF,pos1[0])[0]
+    HeightMapLot2 = ContainerListToSingleMatrix(containerDF,lotDF,pos2[0])[0]
+
 
     # Get First Height
-    FirstHeight = GeneratedMatrices[pos1[0]][pos1[1],pos1[2]]
+    FirstHeight = HeightMapLot1[pos1[1],pos1[2]]
 
     # Get Second Height
-    SecondHeight = GeneratedMatrices[pos2[0]][pos2[1],pos2[2]]
+    SecondHeight = HeightMapLot2[pos2[1],pos2[2]]
 
     # Get the positions to replace in the dataframe
     FirstIndex = [pos1[0],pos1[1],pos1[2],FirstHeight-1]
     SecondIndex = [pos2[0],pos2[1],pos2[2],SecondHeight]
 
     #InsertCheck
-    if IsMoveLegal(pos1, pos2, GeneratedMatrices, SecondHeight) and posHasContainer(FirstIndex,containerDF):
+    if IsMoveLegal(pos1, pos2, HeightMapLot1, HeightMapLot2, SecondHeight) and posHasContainer(FirstIndex,containerDF):
 
         #Replace coordinates of container
         containerDF.loc[(containerDF[["Lot", "X", "Y", "Z"]] == FirstIndex).all(axis=1),["Lot", "X", "Y", "Z"]] = SecondIndex
 
-        lots[0].setLagsBehind()
+        lots[pos1[0]].setLagsBehind()
+        lots[pos2[0]].setLagsBehind()
 
         #This scoring does not account for just moving a container within a plot.
         if(FirstIndex[0] == SecondIndex[0]):
@@ -178,7 +181,7 @@ class MouseClass:
 heightOffset = 1
 #Generate lots based on the lot dataset
 for i in lotDF.index:
-    lots.append(Lot((1, heightOffset), lotDF.loc[i, "Size"], lotDF.loc[i, "maxStack"], screen, ScaleFactor, name=lotDF.loc[i,"Name"]))
+    lots.append(Lot((1, heightOffset), lotDF.loc[i,"ID"], lotDF.loc[i, "Size"], lotDF.loc[i, "maxStack"], screen, ScaleFactor, name=lotDF.loc[i,"Name"]))
     heightOffset += lotDF.loc[i,"Size"][1] + 5
 
 ms = MouseClass(ScaleFactor, screen, offset=Offset)
@@ -190,9 +193,11 @@ y = 0
 z = 0
 lot = True
 
+
 # Run until the user asks to quit
 running = True
 while running:
+    begintime = time.time_ns()
     # Did the user click the window close button?
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -204,8 +209,6 @@ while running:
             if event.key == pygame.K_s: Offset = (Offset[0],Offset[1]-100)
 
             if event.key == pygame.K_r: Offset = (0,0);ScaleFactor = 10
-
-            if event.key == pygame.K_f: moveContainerPos((0,0,0,1),(0,3,0,0))
 
 
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -220,14 +223,7 @@ while running:
             if event.y == 1:
                 ScaleFactor *= 1.125
     #Check if the lots are lagging behind.
-    if lots[0].lagsbehind:
-        #print("Refreshing Screen")
-        # Fill lots with new data
-        GeneratedMatrices = ContainerListToMatrix(containerDF, lotDF)
-        #GeneratedPrioMatrices = ContainerListToPrioMatrix(containerDF, lotDF)
-        # print(GeneratedPrioMatrices)
-        for i, val in enumerate(GeneratedMatrices):
-            lots[i].loadData(val)
+
 
     if z >= 5:
         z = 0
@@ -247,13 +243,17 @@ while running:
 
     z += 1
     # Fill the background with white
-    screen.fill((0, 0, 255))
-    for i in lots:
-        i.render(ScaleFactor,Offset,StretchFactor)
-    ms.checkState()
-    ms.render(ScaleFactor,Offset,StretchFactor)
-    # Flip the display
-    pygame.display.flip()
+    #screen.fill((0, 0, 255))
+    #for i in lots:
+    #    if i.lagsbehind:
+    #        lots[i.id].loadData(ContainerListToSingleMatrix(containerDF, lotDF, i.id)[0])
+    #    i.render(ScaleFactor,Offset,StretchFactor)
+    #ms.checkState()
+    #ms.render(ScaleFactor,Offset,StretchFactor)
+    ## Flip the display
+    #pygame.display.flip()
+    endtime = time.time_ns()
 
+    print("This loop took %i nanoseconds"%(endtime-begintime))
 # Done! Time to quit.
 pygame.quit()
